@@ -4,10 +4,7 @@ use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader};
 
-static MAX_VAL: f64 = 100.0;
-static MIN_VAL: f64 = -100.0;
-
-type MyMap<'a> = std::collections::HashMap<String, Vec<f64>>;
+type MyMap<'a> = std::collections::HashMap<String, (f64, f64, f64, usize)>;
 // key, min, mean, max 
 type MyOrderedResult<'a> = std::collections::BTreeMap<&'a str, (String, String, String)>;
 type DebugResult = std::collections::BTreeMap<String, (String, String, String)>;
@@ -34,44 +31,40 @@ fn parse_line(my_map: &mut MyMap, line: &str) -> Option<bool> {
     };
 
     if my_map.contains_key(name) {
-        my_map.get_mut(name)?.push(value);
+        let item = my_map.get_mut(name).unwrap();
+        
+        calculate_instant_values(item, value);
     } else {
-        my_map.insert(name.to_string(), vec![value]);
+        my_map.insert(name.to_string(), (value, value, value, 1));
     }
     Some(true)
 }
 
-fn round_value(value: f64) -> String {
-    format!("{:.1}", (value * 10.0).round() / 10.0)
-}
-
-fn calculate_values(input: &Vec<f64>) -> (String, String, String) {
-    let mut max = MIN_VAL;
-    let mut min = MAX_VAL;
-    let mut sum = 0.0;
-
-    for value in input.iter() {
-        if value > &max {
-            max = *value;
-        }
-
-        if value < &min {
-            min = *value;
-        }
-
-        sum += *value;
+fn calculate_instant_values(item: &mut (f64, f64, f64, usize), new_value: f64) {
+    if new_value < item.0 {
+        item.0 = new_value;
     }
 
-    let mean = sum / input.len() as f64;
+    if new_value > item.2 {
+        item.2 = new_value;
+    }
 
-    (round_value(min), round_value(mean), round_value(max))
+    item.1 = ((item.1 * item.3 as f64) + new_value) / (item.3 + 1) as f64;
+
+    item.3 += 1;
 }
 
-fn calculate_result<'a ,'b>(my_map: &'a MyMap<'a>, my_result: &'b mut MyOrderedResult<'a>) {
-    for (key, value) in my_map.iter() {
-       let number_results = calculate_values(value); 
+fn round_values(values: (&f64, &f64, &f64)) -> (String, String, String) {
+    (
+        format!("{:.1}", (values.0 * 10.0).round() / 10.0),
+        format!("{:.1}", (values.1 * 10.0).round() / 10.0),
+        format!("{:.1}", (values.2 * 10.0).round() / 10.0)
+    )
+}
 
-       my_result.insert(key, number_results);
+fn create_result<'a ,'b>(my_map: &'a MyMap<'a>, my_result: &'b mut MyOrderedResult<'a>) {
+    for (key, value) in my_map.iter() {
+       my_result.insert(key, round_values((&value.0, &value.1, &value.2)));
     }
 }
 
@@ -131,7 +124,7 @@ fn run(path: &Path, debug: bool) -> (usize, usize, Option<DebugResult>) {
         }
     }
 
-    calculate_result(&my_map, &mut my_result);
+    create_result(&my_map, &mut my_result);
 
     display_result(&my_result, my_result.len(), false);
 
@@ -139,7 +132,7 @@ fn run(path: &Path, debug: bool) -> (usize, usize, Option<DebugResult>) {
         let mut debug_result = std::collections::BTreeMap::new();
 
         for (title, values) in my_result.iter() {
-            debug_result.insert(title.to_string(), values.clone());
+            debug_result.insert(title.to_string(), (values.0.clone(), values.1.clone(), values.2.clone()));
         }
 
         return (line_counter, my_result.len(), Some(debug_result));
@@ -174,60 +167,28 @@ mod tests {
 
         parse_line(&mut my_map, &test_str);
 
-        assert_eq!(my_map.get("Ranst").unwrap(), &vec![-13.7]);
+        assert_eq!(my_map.get("Ranst").unwrap(), &(-13.7, -13.7, -13.7,  1));
 
         parse_line(&mut my_map, &test_str2);
 
         assert_eq!(my_map.len(), 1);
-        assert_eq!(my_map.get("Ranst").unwrap(), &vec![-13.7, 2.7]);
+        assert_eq!(my_map.get("Ranst").unwrap(), &(-13.7, -5.5, 2.7, 2));
 
         parse_line(&mut my_map, &test_str3);
 
         assert_eq!(my_map.len(), 2);
-        assert_eq!(my_map.get("Longhua").unwrap(), &vec![-5.3]);
-        assert_eq!(my_map.get("Ranst").unwrap(), &vec![-13.7, 2.7]);
+        assert_eq!(my_map.get("Longhua").unwrap(), &(-5.3, -5.3, -5.3, 1));
+        assert_eq!(my_map.get("Ranst").unwrap(), &(-13.7, -5.5, 2.7, 2));
     }
 
     #[test]
     fn test_round_value() {
-        let input = 10.0;
+        let input = (10.0, -20.0, 1.0 / 3.0 * 2.0);
         
-        assert_eq!(round_value(input), String::from("10.0"));
-
-        let input = -20.0;
-
-        assert_eq!(round_value(input), String::from("-20.0"));
-
-        let input = 1.0 / 3.0 * 2.0;
-
-        assert_eq!(round_value(input), String::from("0.7"));
-    }
-
-    #[test]
-    fn test_calculate_values() {
-        let input = vec![10.0, -20.0, 5.0];
-
-        assert_eq!(calculate_values(&input), (
-                String::from("-20.0"), 
-                String::from("-1.7"),
-                String::from("10.0")))
-    }
-
-    #[test]
-    fn test_order_cities() {
-        let mut input: MyOrderedResult = std::collections::BTreeMap::new();
-
-        let tmp = "".to_string();
-
-        let tmp_data = (tmp.clone(), tmp.clone(), tmp.clone());
-
-        input.insert("ACity", tmp_data.clone());
-        input.insert("CCity", tmp_data.clone());
-        input.insert("BCity", tmp_data.clone());
-
-        let keys: Vec<_> = input.keys().cloned().collect();
-
-        assert_eq!(keys, vec!["ACity", "BCity", "CCity"]);
+        assert_eq!(
+            round_values((&input.0, &input.1, &input.2)), 
+            ("10.0".to_string(), "-20.0".to_string(), "0.7".to_string())
+        );
     }
 
     #[test]

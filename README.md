@@ -1,6 +1,6 @@
 # 1 billion row challenge in rust #
 
-Current version: 0.4
+Current version: 0.5
 
 ## Build and run ## 
 
@@ -12,6 +12,12 @@ Current version: 0.4
 > Disclaimer: these result where achived on a 2018 Mac mini with Intel i5 and 8 Gb of RAM
 
 ## Version history ## 
+
+### Version 0.5 ### 
+
+**Running time:** 167 seconds
+
+Changing the calculation logic and only store the results to reduce memory usage
 
 ### Version 0.4 ###
 
