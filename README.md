@@ -13,6 +13,12 @@ Current version: 0.1
 
 ## Version history ## 
 
+### Version 0.2 ##
+
+**Running time:** 365 seconds
+
+Replacing the file reading method to a buf reader and only reading the file one line at a time
+
 ### Version 0.1 ### 
 
 **Running time:** 630 seconds

@@ -2,6 +2,7 @@ use core::panic;
 use std::path::{Path, PathBuf};
 use std::env;
 use std::fs;
+use std::io::{BufRead, BufReader};
 
 static MAX_VAL: f64 = 100.0;
 static MIN_VAL: f64 = -100.0;
@@ -15,7 +16,13 @@ fn parse_line(my_map: &mut MyMap, line: &str) -> Option<bool> {
     let values: Vec<&str> = line.split(";").collect(); 
 
     let name = String::from(*values.get(0)?);
-    let value = (*values.get(1)?).parse().expect("Invalid value found!");
+
+    let value = *values.get(1)?;
+    let value = if value.contains("\n") {
+        value[0..value.len() - 2].parse().expect("Invalid number found!")
+    } else {
+        value.parse().expect("Invalud number found!")
+    };
 
     if my_map.contains_key(&name) {
         my_map.get_mut(&name)?.push(value);
@@ -79,26 +86,6 @@ fn display_result(result: &MyOrderedResult, max_line: usize) {
     } 
 }
 
-fn run(path: &Path) -> (usize, MyOrderedResult) {
-    let mut line_counter = 0;
-    let mut my_map: MyMap = std::collections::HashMap::new();
-
-    for line in fs::read_to_string(path).unwrap().lines() {
-        line_counter += 1;
-        parse_line(&mut my_map, line);
-
-        if line_counter % 10_000_000 == 0 {
-            println!("{line_counter}");
-        }
-    }
-
-    let result = order_result(calculate_result(&my_map));
-
-    display_result(&result, result.len());
-
-    (line_counter, result)
-}
-
 fn get_file_name() -> PathBuf {
     let path = Path::new("data/");
 
@@ -116,6 +103,38 @@ fn get_file_name() -> PathBuf {
     }
 
     path 
+}
+
+fn run(path: &Path) -> (usize, MyOrderedResult) {
+    let mut line_counter = 0;
+    let mut my_map: MyMap = std::collections::HashMap::new();
+    
+    let file = fs::File::open(path).unwrap();
+    let mut buf_reader = BufReader::new(file);
+    let mut content = String::new();
+
+    loop {
+        match buf_reader.read_line(&mut content) {
+            Ok(0) => break,
+            Ok(_) => {
+                line_counter += 1;
+                parse_line(&mut my_map, &content);
+
+                if line_counter % 10_000_000 == 0 {
+                    println!("{line_counter}");
+                }
+
+                content.clear();
+            },
+            _ => panic!("Something went wrong"),
+        }
+    }
+
+    let result = order_result(calculate_result(&my_map));
+
+    display_result(&result, result.len());
+
+    (line_counter, result)
 }
 
 fn main() {
