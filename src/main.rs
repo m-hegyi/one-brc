@@ -7,27 +7,35 @@ use std::io::{BufRead, BufReader};
 static MAX_VAL: f64 = 100.0;
 static MIN_VAL: f64 = -100.0;
 
-type MyMap = std::collections::HashMap<String, Vec<f64>>;
+type MyMap<'a> = std::collections::HashMap<String, Vec<f64>>;
 // key, min, mean, max 
-type MyResult = std::collections::HashMap<String, (String, String, String)>;
 type MyOrderedResult = std::collections::BTreeMap<String, (String, String, String)>;
 
 fn parse_line(my_map: &mut MyMap, line: &str) -> Option<bool> {
-    let values: Vec<&str> = line.split(";").collect(); 
+    let mut split_index = 0;
+    for (index, value) in line.char_indices() {
+        if value == ';' {
+            split_index = index;
+        }
+    }
 
-    let name = String::from(*values.get(0)?);
+    if split_index == 0 {
+        panic!("split not found");
+    }
 
-    let value = *values.get(1)?;
+    let name = &line[0..split_index];
+
+    let value = &line[split_index+1..];
     let value = if value.contains("\n") {
-        value[0..value.len() - 2].parse().expect("Invalid number found!")
+        value[0..value.len() - 1].parse().expect("Invalid number found!")
     } else {
-        value.parse().expect("Invalud number found!")
+        value.parse().expect("Invalid number found!")
     };
 
-    if my_map.contains_key(&name) {
-        my_map.get_mut(&name)?.push(value);
+    if my_map.contains_key(name) {
+        my_map.get_mut(name)?.push(value);
     } else {
-        my_map.insert(name, vec![value]);
+        my_map.insert(name.to_string(), vec![value]);
     }
     Some(true)
 }
@@ -58,26 +66,16 @@ fn calculate_values(input: &Vec<f64>) -> (String, String, String) {
     (round_value(min), round_value(mean), round_value(max))
 }
 
-fn calculate_result(my_map: &MyMap) -> MyResult {
-    let mut result: MyResult = std::collections::HashMap::with_capacity(my_map.len());
+fn calculate_result(my_map: &MyMap) -> MyOrderedResult {
+    let mut result: MyOrderedResult = std::collections::BTreeMap::new();
 
     for (key, value) in my_map.iter() {
        let number_results = calculate_values(value); 
 
-       result.insert(key.clone(), number_results);
+       result.insert(key.to_string(), number_results);
     }
 
     result
-}
-
-fn order_result(result: MyResult) -> MyOrderedResult {
-    let mut map = std::collections::BTreeMap::new();
-
-    for (key, values) in result {
-        map.insert(key.clone(), values.clone());
-    }
-
-    map
 }
 
 fn display_result(result: &MyOrderedResult, max_line: usize) {
@@ -105,7 +103,7 @@ fn get_file_name() -> PathBuf {
     path 
 }
 
-fn run(path: &Path) -> (usize, MyOrderedResult) {
+fn run(path: &Path) -> (usize, MyOrderedResult, MyMap) {
     let mut line_counter = 0;
     let mut my_map: MyMap = std::collections::HashMap::new();
     
@@ -130,18 +128,19 @@ fn run(path: &Path) -> (usize, MyOrderedResult) {
         }
     }
 
-    let result = order_result(calculate_result(&my_map));
+
+    let result = calculate_result(&my_map);
 
     display_result(&result, result.len());
 
-    (line_counter, result)
+    (line_counter, result, my_map)
 }
 
 fn main() {
     let path = get_file_name();
     let now = std::time::Instant::now();
 
-    let (line_counter, result) = run(&path);
+    let (line_counter, result, _) = run(&path);
 
     let elapsed_time = now.elapsed();
 
@@ -204,7 +203,7 @@ mod tests {
 
     #[test]
     fn test_order_cities() {
-        let mut input: MyResult = std::collections::HashMap::new();
+        let mut input: MyOrderedResult = std::collections::BTreeMap::new();
 
         let tmp = "".to_string();
 
@@ -214,11 +213,36 @@ mod tests {
         input.insert("CCity".to_string(), tmp_data.clone());
         input.insert("BCity".to_string(), tmp_data.clone());
 
-
-        let res = order_result(input);
-        
-        let keys: Vec<_> = res.keys().cloned().collect();
+        let keys: Vec<_> = input.keys().cloned().collect();
 
         assert_eq!(keys, vec!["ACity", "BCity", "CCity"]);
+    }
+
+    #[test]
+    fn test_run() {
+        let (line_counter, mut result, my_map) = run(Path::new("data/test_measurements.txt"));
+
+        assert_eq!(result.len(), 8876);
+        assert_eq!(line_counter, 100_000);
+        let last = result.pop_last().unwrap();
+
+        let res = my_map.get("’Aïn Roua").unwrap();
+
+        assert_eq!(res.len(), 3);
+        assert_eq!(res, &vec![-79.2, -0.8, 59.8]);
+
+        assert_eq!(last.0, "’Aïn Roua".to_string());
+        assert_eq!(last.1, (
+                "-79.2".to_string(),
+                "-6.7".to_string(),
+                "59.8".to_string(),
+        ));
+
+        let item = result.get("Szentgotthárd").unwrap();
+        assert_eq!(item, &(
+                "-59.5".to_string(),
+                "-10.4".to_string(),
+                "56.9".to_string(),
+        ));
     }
 }

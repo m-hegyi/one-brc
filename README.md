@@ -1,6 +1,6 @@
 # 1 billion row challenge in rust #
 
-Current version: 0.1
+Current version: 0.3
 
 ## Build and run ## 
 
@@ -12,6 +12,12 @@ Current version: 0.1
 > Disclaimer: these result where achived on a 2018 Mac mini with Intel i5 and 8 Gb of RAM
 
 ## Version history ## 
+
+## Version 0.3 ##
+
+**Running time:** 254
+
+Optimizing the line parser to not allocate new String, but to use the slice
 
 ### Version 0.2 ##
 

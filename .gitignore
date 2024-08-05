@@ -2,3 +2,4 @@
 /data/*
 
 !data/.gitkeep
+!data/test_measurements.txt
