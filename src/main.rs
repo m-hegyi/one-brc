@@ -9,7 +9,8 @@ static MIN_VAL: f64 = -100.0;
 
 type MyMap<'a> = std::collections::HashMap<String, Vec<f64>>;
 // key, min, mean, max 
-type MyOrderedResult = std::collections::BTreeMap<String, (String, String, String)>;
+type MyOrderedResult<'a> = std::collections::BTreeMap<&'a str, (String, String, String)>;
+type DebugResult = std::collections::BTreeMap<String, (String, String, String)>;
 
 fn parse_line(my_map: &mut MyMap, line: &str) -> Option<bool> {
     let mut split_index = 0;
@@ -66,19 +67,19 @@ fn calculate_values(input: &Vec<f64>) -> (String, String, String) {
     (round_value(min), round_value(mean), round_value(max))
 }
 
-fn calculate_result(my_map: &MyMap) -> MyOrderedResult {
-    let mut result: MyOrderedResult = std::collections::BTreeMap::new();
-
+fn calculate_result<'a ,'b>(my_map: &'a MyMap<'a>, my_result: &'b mut MyOrderedResult<'a>) {
     for (key, value) in my_map.iter() {
        let number_results = calculate_values(value); 
 
-       result.insert(key.to_string(), number_results);
+       my_result.insert(key, number_results);
     }
-
-    result
 }
 
-fn display_result(result: &MyOrderedResult, max_line: usize) {
+fn display_result(result: &MyOrderedResult, max_line: usize, skip: bool) {
+    if skip {
+        return;
+    }
+
     for (city, (min, mean, max)) in result.iter().take(max_line) {
         println!("{city};{min};{mean};{max}");
     } 
@@ -103,10 +104,12 @@ fn get_file_name() -> PathBuf {
     path 
 }
 
-fn run(path: &Path) -> (usize, MyOrderedResult, MyMap) {
-    let mut line_counter = 0;
+fn run(path: &Path, debug: bool) -> (usize, usize, Option<DebugResult>) {
     let mut my_map: MyMap = std::collections::HashMap::new();
-    
+    let mut my_result: MyOrderedResult = std::collections::BTreeMap::new(); 
+
+    let mut line_counter = 0;
+
     let file = fs::File::open(path).unwrap();
     let mut buf_reader = BufReader::new(file);
     let mut content = String::new();
@@ -128,24 +131,33 @@ fn run(path: &Path) -> (usize, MyOrderedResult, MyMap) {
         }
     }
 
+    calculate_result(&my_map, &mut my_result);
 
-    let result = calculate_result(&my_map);
+    display_result(&my_result, my_result.len(), false);
 
-    display_result(&result, result.len());
+    if debug {
+        let mut debug_result = std::collections::BTreeMap::new();
 
-    (line_counter, result, my_map)
+        for (title, values) in my_result.iter() {
+            debug_result.insert(title.to_string(), values.clone());
+        }
+
+        return (line_counter, my_result.len(), Some(debug_result));
+    }
+
+    (line_counter, my_result.len(), None)
 }
 
 fn main() {
     let path = get_file_name();
     let now = std::time::Instant::now();
 
-    let (line_counter, result, _) = run(&path);
+    let (line_count, city_count, _) = run(&path, false);
 
     let elapsed_time = now.elapsed();
 
     println!("----STATS----");
-    println!("lines read: {}, cities: {}, elapsed time: {}", line_counter, result.len(), elapsed_time.as_secs());
+    println!("lines read: {}, cities: {}, elapsed time: {}", line_count, city_count, elapsed_time.as_secs());
 }
 
 #[cfg(test)]
@@ -209,9 +221,9 @@ mod tests {
 
         let tmp_data = (tmp.clone(), tmp.clone(), tmp.clone());
 
-        input.insert("ACity".to_string(), tmp_data.clone());
-        input.insert("CCity".to_string(), tmp_data.clone());
-        input.insert("BCity".to_string(), tmp_data.clone());
+        input.insert("ACity", tmp_data.clone());
+        input.insert("CCity", tmp_data.clone());
+        input.insert("BCity", tmp_data.clone());
 
         let keys: Vec<_> = input.keys().cloned().collect();
 
@@ -220,16 +232,13 @@ mod tests {
 
     #[test]
     fn test_run() {
-        let (line_counter, mut result, my_map) = run(Path::new("data/test_measurements.txt"));
+        let (line_counter, city_count, maybe_debug_result) = run(Path::new("data/test_measurements.txt"), true);
 
-        assert_eq!(result.len(), 8876);
+        let mut result = maybe_debug_result.unwrap();
+
+        assert_eq!(city_count, 8876);
         assert_eq!(line_counter, 100_000);
         let last = result.pop_last().unwrap();
-
-        let res = my_map.get("’Aïn Roua").unwrap();
-
-        assert_eq!(res.len(), 3);
-        assert_eq!(res, &vec![-79.2, -0.8, 59.8]);
 
         assert_eq!(last.0, "’Aïn Roua".to_string());
         assert_eq!(last.1, (

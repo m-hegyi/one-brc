@@ -1,6 +1,6 @@
 # 1 billion row challenge in rust #
 
-Current version: 0.3
+Current version: 0.4
 
 ## Build and run ## 
 
@@ -13,9 +13,16 @@ Current version: 0.3
 
 ## Version history ## 
 
-## Version 0.3 ##
+### Version 0.4 ###
 
-**Running time:** 254
+**Running time:** 235 seconds
+
+Reusing the keys from the HashMap instead of reallocating it in the BTreeMap
+One extra config to debug the result in the tests
+
+### Version 0.3 ###
+
+**Running time:** 254 seconds
 
 Optimizing the line parser to not allocate new String, but to use the slice
 
