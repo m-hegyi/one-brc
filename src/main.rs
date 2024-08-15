@@ -1,57 +1,47 @@
-use core::panic;
+use core::{panic, str};
 use std::path::{Path, PathBuf};
 use std::env;
 use std::fs;
-use std::io::{BufRead, BufReader};
+use std::io::{BufReader, Read};
 
-type MyMap<'a> = std::collections::HashMap<String, (f64, f64, f64, usize)>;
-// key, min, mean, max 
-type MyOrderedResult<'a> = std::collections::BTreeMap<&'a str, (String, String, String)>;
-type DebugResult = std::collections::BTreeMap<String, (String, String, String)>;
+const NEW_LINE_CHAR: u8 = b'\n';
+const DELIMETER: u8 = b';';
 
-fn parse_line(my_map: &mut MyMap, line: &str) -> Option<bool> {
-    let mut split_index = 0;
-    for (index, value) in line.char_indices() {
-        if value == ';' {
-            split_index = index;
-        }
-    }
-
-    if split_index == 0 {
-        panic!("split not found");
-    }
-
-    let name = &line[0..split_index];
-
-    let value = &line[split_index+1..];
-    let value = if value.contains("\n") {
-        value[0..value.len() - 1].parse().expect("Invalid number found!")
-    } else {
-        value.parse().expect("Invalid number found!")
-    };
-
-    if my_map.contains_key(name) {
-        let item = my_map.get_mut(name).unwrap();
-        
-        calculate_instant_values(item, value);
-    } else {
-        my_map.insert(name.to_string(), (value, value, value, 1));
-    }
-    Some(true)
+#[derive(Debug, PartialEq)]
+struct Stats {
+    min: f64,
+    max: f64,
+    sum: f64,
+    count: usize,
 }
 
-fn calculate_instant_values(item: &mut (f64, f64, f64, usize), new_value: f64) {
-    if new_value < item.0 {
-        item.0 = new_value;
+impl From<f64> for Stats {
+    fn from(item: f64) -> Self {
+        Stats {
+            min: item,
+            max: item,
+            sum: item,
+            count: 1,
+        }
+    }
+}
+
+type MyMap<'a> = std::collections::HashMap<Vec<u8>, Stats>;
+// key, min, mean, max 
+type MyOrderedResult<'a> = std::collections::BTreeMap<&'a [u8], (String, String, String)>;
+type DebugResult = std::collections::BTreeMap<String, (String, String, String)>;
+
+fn calculate_instant_values(item: &mut Stats, new_value: f64) {
+    if new_value < item.min {
+        item.min = new_value;
     }
 
-    if new_value > item.2 {
-        item.2 = new_value;
+    if new_value > item.max {
+        item.max = new_value;
     }
 
-    item.1 = ((item.1 * item.3 as f64) + new_value) / (item.3 + 1) as f64;
-
-    item.3 += 1;
+    item.count += 1; 
+    item.sum += new_value;
 }
 
 fn round_values(values: (&f64, &f64, &f64)) -> (String, String, String) {
@@ -64,7 +54,8 @@ fn round_values(values: (&f64, &f64, &f64)) -> (String, String, String) {
 
 fn create_result<'a ,'b>(my_map: &'a MyMap<'a>, my_result: &'b mut MyOrderedResult<'a>) {
     for (key, value) in my_map.iter() {
-       my_result.insert(key, round_values((&value.0, &value.1, &value.2)));
+        let avg = value.sum / value.count as f64;
+       my_result.insert(key, round_values((&value.min, &avg, &value.max)));
     }
 }
 
@@ -74,6 +65,7 @@ fn display_result(result: &MyOrderedResult, max_line: usize, skip: bool) {
     }
 
     for (city, (min, mean, max)) in result.iter().take(max_line) {
+        let city = String::from_utf8(city.to_vec()).unwrap();
         println!("{city};{min};{mean};{max}");
     } 
 }
@@ -97,33 +89,159 @@ fn get_file_name() -> PathBuf {
     path 
 }
 
-fn run(path: &Path, debug: bool) -> (usize, usize, Option<DebugResult>) {
-    let mut my_map: MyMap = std::collections::HashMap::new();
-    let mut my_result: MyOrderedResult = std::collections::BTreeMap::new(); 
+fn parse_line_from_buffer(my_map: &mut MyMap, line: &[u8], delimeter_index: usize) -> Result<(), &'static str>{
+    let title = Vec::from(&line[..delimeter_index]);
 
-    let mut line_counter = 0;
+    match String::from_utf8(title.clone()) {
+        Ok(_) => {},
+        Err(_err) => {
+            println!("{:?}", String::from_utf8(title.to_vec()).unwrap()); 
+            println!("{:?}", "Ban An\n;".as_bytes().to_vec());
+            println!("{:?}", String::from_utf8(line.to_vec()));
+        }
+        
+    }
 
-    let file = fs::File::open(path).unwrap();
-    let mut buf_reader = BufReader::new(file);
-    let mut content = String::new();
+    if title[0] == b'a' {
+        return Err("Wrong char");
+    }
 
-    loop {
-        match buf_reader.read_line(&mut content) {
-            Ok(0) => break,
-            Ok(_) => {
-                line_counter += 1;
-                parse_line(&mut my_map, &content);
+    let temperature = unsafe { str::from_utf8_unchecked(&line[delimeter_index+1..]).parse().unwrap() };
+    if my_map.contains_key(&title) {
+        let item = my_map.get_mut(&title).unwrap();
 
-                if line_counter % 10_000_000 == 0 {
-                    println!("{line_counter}");
+        calculate_instant_values(item, temperature);
+    } else {
+        let stats = Stats::from(temperature);
+
+        my_map.insert(title, stats); 
+    }
+
+    Ok(())
+}
+
+fn parse_buffer_to_line(buf: &[u8], my_map: &mut MyMap) {
+    let mut last_new_line_index = 0;
+    let mut delimeter_index = 0;
+    for (index, data) in buf.iter().enumerate() {
+        if data == &DELIMETER {
+            delimeter_index = index;
+        }
+        if data == &NEW_LINE_CHAR {
+            if delimeter_index > 0 {
+                let (start_index, line_delimeter_index) = if last_new_line_index == 0 {
+                    (0, delimeter_index)
+                } else {
+                    (last_new_line_index + 1, delimeter_index - last_new_line_index - 1)
+                };
+
+                let result = parse_line_from_buffer(my_map, &buf[start_index..index], line_delimeter_index);
+
+                if result.is_err() {
+                    panic!("Error happend: {}", result.err().unwrap());
                 }
-
-                content.clear();
-            },
-            _ => panic!("Something went wrong"),
+                
+            }
+            last_new_line_index = index;
         }
     }
 
+    if delimeter_index == 0 && last_new_line_index > 1 {
+        panic!("Invalid buffer: {:?}", buf);
+    }
+}
+
+fn run(path: &Path, debug: bool) -> (usize, usize, Option<DebugResult>) {
+    let file = fs::File::open(path).unwrap();
+    let mut buf_reader = BufReader::new(file);
+    let mut buf = [0; 256 * 1024];
+
+    let mut start_index = 0;
+    let mut loop_counter = 0;
+
+    let (sender, receiver) = crossbeam_channel::bounded::<Box<[u8]>>(100);
+
+    let thread_nums: usize = std::thread::available_parallelism().unwrap().into();
+
+    let mut handlers = Vec::with_capacity(thread_nums);
+
+    for _ in 0..thread_nums {
+        let rec = receiver.clone();
+        let handler = std::thread::spawn(move || {
+            let mut my_map = std::collections::HashMap::new();
+            for buf_vector in rec {
+                parse_buffer_to_line(buf_vector.as_ref(), &mut my_map)
+            }
+
+            my_map
+        });     
+        
+        handlers.push(handler);
+    }
+
+    
+
+    loop {
+        let bytes_read = match buf_reader.read(&mut buf[start_index..]) {
+            Ok(n) => { n },
+            _ => panic!("Something went wrong"),
+        };
+
+        if bytes_read == 0 {
+            break;
+        }
+
+        loop_counter += 1;
+        if loop_counter % 1000 == 0 {
+            println!("loop counter: {loop_counter}");
+        }
+
+        let usable_buf = &buf[..start_index + bytes_read];
+        let last_new_line_pos = usable_buf.iter().rev().position(|&x| x == b'\n');
+
+        match last_new_line_pos {
+            Some(pos) => {
+                let end_index = bytes_read + start_index;
+
+                let boxed_buf = Box::from(&usable_buf[..end_index - pos]);
+                let result = sender.send(boxed_buf);
+
+                if result.is_err() {
+                    panic!("{:?}", result.err());
+                }
+
+                buf.copy_within(end_index - pos..end_index, 0);
+                start_index = pos;
+            },
+            None => {
+                buf.copy_within(..start_index + bytes_read, 0);
+                start_index = start_index + bytes_read;
+            }
+        }
+    }
+
+    drop(sender);
+
+    let mut my_map: MyMap = std::collections::HashMap::new();
+
+    for (index, handler) in handlers.into_iter().enumerate() {
+        let result = handler.join().unwrap();
+        if index == 0 {
+            my_map.extend(result);
+        } else {
+            for (title, stats) in result {
+                my_map.entry(title).and_modify(|s| {
+                    s.min = s.min.min(stats.min);
+                    s.max = s.max.max(stats.max);
+                    s.sum += stats.sum;
+                    s.count += stats.count; 
+                }).or_insert(stats);
+            }
+        }
+
+    }
+
+    let mut my_result: MyOrderedResult = std::collections::BTreeMap::new(); 
     create_result(&my_map, &mut my_result);
 
     display_result(&my_result, my_result.len(), false);
@@ -132,13 +250,14 @@ fn run(path: &Path, debug: bool) -> (usize, usize, Option<DebugResult>) {
         let mut debug_result = std::collections::BTreeMap::new();
 
         for (title, values) in my_result.iter() {
-            debug_result.insert(title.to_string(), (values.0.clone(), values.1.clone(), values.2.clone()));
+            let title = String::from_utf8(title.to_vec()).unwrap();
+            debug_result.insert(title, (values.0.clone(), values.1.clone(), values.2.clone()));
         }
 
-        return (line_counter, my_result.len(), Some(debug_result));
+        return (loop_counter, my_result.len(), Some(debug_result));
     }
 
-    (line_counter, my_result.len(), None)
+    (loop_counter, my_result.len(), None)
 }
 
 fn main() {
@@ -150,7 +269,7 @@ fn main() {
     let elapsed_time = now.elapsed();
 
     println!("----STATS----");
-    println!("lines read: {}, cities: {}, elapsed time: {}", line_count, city_count, elapsed_time.as_secs());
+    println!("chunks read: {}, cities: {}, elapsed time: {}", line_count, city_count, elapsed_time.as_secs());
 }
 
 #[cfg(test)]
@@ -158,27 +277,40 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_line_parser() {
-        let test_str = String::from("Ranst;-13.7");
-        let test_str2 = String::from("Ranst;2.7");
-        let test_str3 = String::from("Longhua;-5.3");
-
+    fn test_line_parser_from_buffer() {
+        let buff_input = String::from("Ranst;-13.7");
         let mut my_map: MyMap = std::collections::HashMap::new();
 
-        parse_line(&mut my_map, &test_str);
-
-        assert_eq!(my_map.get("Ranst").unwrap(), &(-13.7, -13.7, -13.7,  1));
-
-        parse_line(&mut my_map, &test_str2);
+        let _ = parse_line_from_buffer(&mut my_map, buff_input.as_bytes(), 5);
 
         assert_eq!(my_map.len(), 1);
-        assert_eq!(my_map.get("Ranst").unwrap(), &(-13.7, -5.5, 2.7, 2));
 
-        parse_line(&mut my_map, &test_str3);
+        let entries: Vec<_> = my_map.iter().take(1).collect();
+
+        assert_eq!(entries[0].0, &Vec::from("Ranst".as_bytes()));
+        assert_eq!(entries[0].1, &Stats::from(-13.7));
+
+        let buff_input = String::from("Ranst;2.7");
+
+        let _ = parse_line_from_buffer(&mut my_map, buff_input.as_bytes(), 5);
+
+        assert_eq!(my_map.len(), 1);
+
+        let buff_input = String::from("Longhua;-5.3");
+
+        let _ = parse_line_from_buffer(&mut my_map, buff_input.as_bytes(), 7);
 
         assert_eq!(my_map.len(), 2);
-        assert_eq!(my_map.get("Longhua").unwrap(), &(-5.3, -5.3, -5.3, 1));
-        assert_eq!(my_map.get("Ranst").unwrap(), &(-13.7, -5.5, 2.7, 2));
+
+        assert_eq!(my_map.get("Longhua".as_bytes()).unwrap(), &Stats::from(-5.3));
+
+        let stats = Stats {
+            min: -13.7,
+            max: 2.7,
+            sum: -11.0,
+            count: 2,
+        };
+        assert_eq!(my_map.get("Ranst".as_bytes()).unwrap(), &stats);
     }
 
     #[test]
@@ -193,12 +325,12 @@ mod tests {
 
     #[test]
     fn test_run() {
-        let (line_counter, city_count, maybe_debug_result) = run(Path::new("data/test_measurements.txt"), true);
+        let (_line_counter, city_count, maybe_debug_result) = run(Path::new("data/test_measurements.txt"), true);
 
         let mut result = maybe_debug_result.unwrap();
 
         assert_eq!(city_count, 8876);
-        assert_eq!(line_counter, 100_000);
+        //assert_eq!(line_counter, 100_000);
         let last = result.pop_last().unwrap();
 
         assert_eq!(last.0, "’Aïn Roua".to_string());

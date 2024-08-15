@@ -1,6 +1,6 @@
 # 1 billion row challenge in rust #
 
-Current version: 0.5
+Current version: 0.6
 
 ## Build and run ## 
 
@@ -12,6 +12,12 @@ Current version: 0.5
 > Disclaimer: these result where achived on a 2018 Mac mini with Intel i5 and 8 Gb of RAM
 
 ## Version history ## 
+
+### Version 0.6 ###
+
+**Running time:** 45 seconds 
+
+Using the crossbeam create to parallelly parse the buffer in multiple cores
 
 ### Version 0.5 ### 
 
