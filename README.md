@@ -1,6 +1,6 @@
 # 1 billion row challenge in rust #
 
-Current version: 0.6
+Current version: 0.7
 
 ## Build and run ## 
 
@@ -12,6 +12,12 @@ Current version: 0.6
 > Disclaimer: these result where achived on a 2018 Mac mini with Intel i5 and 8 Gb of RAM
 
 ## Version history ## 
+
+### Version 0.7 ###
+
+**Running time:** 41 seconds
+
+Changing to hashmap entry pattern, and formatting the file
 
 ### Version 0.6 ###
 

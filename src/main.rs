@@ -1,8 +1,8 @@
 use core::{panic, str};
-use std::path::{Path, PathBuf};
 use std::env;
 use std::fs;
 use std::io::{BufReader, Read};
+use std::path::{Path, PathBuf};
 
 const NEW_LINE_CHAR: u8 = b'\n';
 const DELIMETER: u8 = b';';
@@ -27,20 +27,14 @@ impl From<f64> for Stats {
 }
 
 type MyMap<'a> = std::collections::HashMap<Vec<u8>, Stats>;
-// key, min, mean, max 
+// key, min, mean, max
 type MyOrderedResult<'a> = std::collections::BTreeMap<&'a [u8], (String, String, String)>;
 type DebugResult = std::collections::BTreeMap<String, (String, String, String)>;
 
 fn calculate_instant_values(item: &mut Stats, new_value: f64) {
-    if new_value < item.min {
-        item.min = new_value;
-    }
-
-    if new_value > item.max {
-        item.max = new_value;
-    }
-
-    item.count += 1; 
+    item.min = item.min.min(new_value);
+    item.max = item.max.max(new_value);
+    item.count += 1;
     item.sum += new_value;
 }
 
@@ -48,14 +42,14 @@ fn round_values(values: (&f64, &f64, &f64)) -> (String, String, String) {
     (
         format!("{:.1}", (values.0 * 10.0).round() / 10.0),
         format!("{:.1}", (values.1 * 10.0).round() / 10.0),
-        format!("{:.1}", (values.2 * 10.0).round() / 10.0)
+        format!("{:.1}", (values.2 * 10.0).round() / 10.0),
     )
 }
 
-fn create_result<'a ,'b>(my_map: &'a MyMap<'a>, my_result: &'b mut MyOrderedResult<'a>) {
+fn create_result<'a, 'b>(my_map: &'a MyMap<'a>, my_result: &'b mut MyOrderedResult<'a>) {
     for (key, value) in my_map.iter() {
         let avg = value.sum / value.count as f64;
-       my_result.insert(key, round_values((&value.min, &avg, &value.max)));
+        my_result.insert(key, round_values((&value.min, &avg, &value.max)));
     }
 }
 
@@ -67,7 +61,7 @@ fn display_result(result: &MyOrderedResult, max_line: usize, skip: bool) {
     for (city, (min, mean, max)) in result.iter().take(max_line) {
         let city = String::from_utf8(city.to_vec()).unwrap();
         println!("{city};{min};{mean};{max}");
-    } 
+    }
 }
 
 fn get_file_name() -> PathBuf {
@@ -86,36 +80,39 @@ fn get_file_name() -> PathBuf {
         panic!("Invalid file path: {:?}", path.to_str());
     }
 
-    path 
+    path
 }
 
-fn parse_line_from_buffer(my_map: &mut MyMap, line: &[u8], delimeter_index: usize) -> Result<(), &'static str>{
+fn parse_line_from_buffer(
+    my_map: &mut MyMap,
+    line: &[u8],
+    delimeter_index: usize,
+) -> Result<(), &'static str> {
     let title = Vec::from(&line[..delimeter_index]);
 
     match String::from_utf8(title.clone()) {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(_err) => {
-            println!("{:?}", String::from_utf8(title.to_vec()).unwrap()); 
+            println!("{:?}", String::from_utf8(title.to_vec()).unwrap());
             println!("{:?}", "Ban An\n;".as_bytes().to_vec());
             println!("{:?}", String::from_utf8(line.to_vec()));
         }
-        
     }
 
     if title[0] == b'a' {
         return Err("Wrong char");
     }
 
-    let temperature = unsafe { str::from_utf8_unchecked(&line[delimeter_index+1..]).parse().unwrap() };
-    if my_map.contains_key(&title) {
-        let item = my_map.get_mut(&title).unwrap();
+    let temperature = unsafe {
+        str::from_utf8_unchecked(&line[delimeter_index + 1..])
+            .parse()
+            .unwrap()
+    };
 
-        calculate_instant_values(item, temperature);
-    } else {
-        let stats = Stats::from(temperature);
-
-        my_map.insert(title, stats); 
-    }
+    my_map
+        .entry(title)
+        .and_modify(|s| calculate_instant_values(s, temperature))
+        .or_insert(Stats::from(temperature));
 
     Ok(())
 }
@@ -132,15 +129,18 @@ fn parse_buffer_to_line(buf: &[u8], my_map: &mut MyMap) {
                 let (start_index, line_delimeter_index) = if last_new_line_index == 0 {
                     (0, delimeter_index)
                 } else {
-                    (last_new_line_index + 1, delimeter_index - last_new_line_index - 1)
+                    (
+                        last_new_line_index + 1,
+                        delimeter_index - last_new_line_index - 1,
+                    )
                 };
 
-                let result = parse_line_from_buffer(my_map, &buf[start_index..index], line_delimeter_index);
+                let result =
+                    parse_line_from_buffer(my_map, &buf[start_index..index], line_delimeter_index);
 
                 if result.is_err() {
                     panic!("Error happend: {}", result.err().unwrap());
                 }
-                
             }
             last_new_line_index = index;
         }
@@ -174,16 +174,14 @@ fn run(path: &Path, debug: bool) -> (usize, usize, Option<DebugResult>) {
             }
 
             my_map
-        });     
-        
+        });
+
         handlers.push(handler);
     }
 
-    
-
     loop {
         let bytes_read = match buf_reader.read(&mut buf[start_index..]) {
-            Ok(n) => { n },
+            Ok(n) => n,
             _ => panic!("Something went wrong"),
         };
 
@@ -212,7 +210,7 @@ fn run(path: &Path, debug: bool) -> (usize, usize, Option<DebugResult>) {
 
                 buf.copy_within(end_index - pos..end_index, 0);
                 start_index = pos;
-            },
+            }
             None => {
                 buf.copy_within(..start_index + bytes_read, 0);
                 start_index = start_index + bytes_read;
@@ -230,18 +228,20 @@ fn run(path: &Path, debug: bool) -> (usize, usize, Option<DebugResult>) {
             my_map.extend(result);
         } else {
             for (title, stats) in result {
-                my_map.entry(title).and_modify(|s| {
-                    s.min = s.min.min(stats.min);
-                    s.max = s.max.max(stats.max);
-                    s.sum += stats.sum;
-                    s.count += stats.count; 
-                }).or_insert(stats);
+                my_map
+                    .entry(title)
+                    .and_modify(|s| {
+                        s.min = s.min.min(stats.min);
+                        s.max = s.max.max(stats.max);
+                        s.sum += stats.sum;
+                        s.count += stats.count;
+                    })
+                    .or_insert(stats);
             }
         }
-
     }
 
-    let mut my_result: MyOrderedResult = std::collections::BTreeMap::new(); 
+    let mut my_result: MyOrderedResult = std::collections::BTreeMap::new();
     create_result(&my_map, &mut my_result);
 
     display_result(&my_result, my_result.len(), false);
@@ -251,7 +251,10 @@ fn run(path: &Path, debug: bool) -> (usize, usize, Option<DebugResult>) {
 
         for (title, values) in my_result.iter() {
             let title = String::from_utf8(title.to_vec()).unwrap();
-            debug_result.insert(title, (values.0.clone(), values.1.clone(), values.2.clone()));
+            debug_result.insert(
+                title,
+                (values.0.clone(), values.1.clone(), values.2.clone()),
+            );
         }
 
         return (loop_counter, my_result.len(), Some(debug_result));
@@ -269,7 +272,12 @@ fn main() {
     let elapsed_time = now.elapsed();
 
     println!("----STATS----");
-    println!("chunks read: {}, cities: {}, elapsed time: {}", line_count, city_count, elapsed_time.as_secs());
+    println!(
+        "chunks read: {}, cities: {}, elapsed time: {}",
+        line_count,
+        city_count,
+        elapsed_time.as_secs()
+    );
 }
 
 #[cfg(test)]
@@ -302,7 +310,10 @@ mod tests {
 
         assert_eq!(my_map.len(), 2);
 
-        assert_eq!(my_map.get("Longhua".as_bytes()).unwrap(), &Stats::from(-5.3));
+        assert_eq!(
+            my_map.get("Longhua".as_bytes()).unwrap(),
+            &Stats::from(-5.3)
+        );
 
         let stats = Stats {
             min: -13.7,
@@ -316,16 +327,17 @@ mod tests {
     #[test]
     fn test_round_value() {
         let input = (10.0, -20.0, 1.0 / 3.0 * 2.0);
-        
+
         assert_eq!(
-            round_values((&input.0, &input.1, &input.2)), 
+            round_values((&input.0, &input.1, &input.2)),
             ("10.0".to_string(), "-20.0".to_string(), "0.7".to_string())
         );
     }
 
     #[test]
     fn test_run() {
-        let (_line_counter, city_count, maybe_debug_result) = run(Path::new("data/test_measurements.txt"), true);
+        let (_line_counter, city_count, maybe_debug_result) =
+            run(Path::new("data/test_measurements.txt"), true);
 
         let mut result = maybe_debug_result.unwrap();
 
@@ -334,17 +346,15 @@ mod tests {
         let last = result.pop_last().unwrap();
 
         assert_eq!(last.0, "’Aïn Roua".to_string());
-        assert_eq!(last.1, (
-                "-79.2".to_string(),
-                "-6.7".to_string(),
-                "59.8".to_string(),
-        ));
+        assert_eq!(
+            last.1,
+            ("-79.2".to_string(), "-6.7".to_string(), "59.8".to_string(),)
+        );
 
         let item = result.get("Szentgotthárd").unwrap();
-        assert_eq!(item, &(
-                "-59.5".to_string(),
-                "-10.4".to_string(),
-                "56.9".to_string(),
-        ));
+        assert_eq!(
+            item,
+            &("-59.5".to_string(), "-10.4".to_string(), "56.9".to_string(),)
+        );
     }
 }
